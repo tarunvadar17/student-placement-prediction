@@ -1,0 +1,214 @@
+Metadata-Version: 2.4
+Name: student-placement-prediction
+Version: 1.0.0
+Summary: AI/ML system for predicting student placement outcomes.
+License: MIT
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+Requires-Dist: numpy>=1.24
+Requires-Dist: pandas>=2.0
+Requires-Dist: scikit-learn>=1.3
+Requires-Dist: joblib>=1.3
+Requires-Dist: matplotlib>=3.7
+Provides-Extra: app
+Requires-Dist: streamlit>=1.30; extra == "app"
+Provides-Extra: dev
+Requires-Dist: pytest>=7.4; extra == "dev"
+
+# Student Placement Prediction using AI/ML
+
+An end-to-end machine learning system that estimates the probability that a student will be placed in a campus recruitment drive, based on academic record, technical skills, experience, and engagement data.
+
+The project covers the full lifecycle: synthetic or real data ingestion, schema validation, preprocessing, model comparison with cross-validation, hyperparameter tuning, held-out evaluation, explainability via permutation importance, model persistence, a reusable prediction API, and an interactive Streamlit dashboard.
+
+---
+
+## Highlights
+
+- **Reproducible pipeline.** Preprocessing and models are bundled in a single scikit-learn `Pipeline`, so training and inference cannot drift apart.
+- **Principled model selection.** Logistic Regression, Random Forest, and Gradient Boosting are compared with stratified 5-fold cross-validation on ROC-AUC, F1, and accuracy. The best model is then tuned with grid search.
+- **Class imbalance handling.** Balanced class weights are used where supported.
+- **Explainability.** Permutation importance on the held-out set shows which features drive predictions.
+- **Actionable output.** Predictions include a probability, a confidence band, and rule-based recommendations for improvement.
+- **Production-minded.** Schema validation, typed configuration, logging, packaging via `pyproject.toml`, and unit tests.
+
+---
+
+## Project Structure
+
+```
+student-placement-prediction/
+├── app/
+│   └── streamlit_app.py          # Interactive dashboard
+├── data/
+│   └── raw/                      # Input dataset (auto-generated if absent)
+├── models/                       # Serialized trained model bundle
+├── reports/                      # Metrics, plots, feature importance
+├── src/placement/
+│   ├── __init__.py
+│   ├── config.py                 # Paths, feature schema, constants
+│   ├── data_generator.py         # Synthetic dataset generator
+│   ├── preprocessing.py          # Schema validation and column transformers
+│   ├── train.py                  # Model comparison, tuning, training CLI
+│   ├── evaluate.py               # Metrics, plots, permutation importance
+│   └── predict.py                # Inference API and recommendations
+├── tests/
+│   └── test_pipeline.py
+├── pyproject.toml
+├── requirements.txt
+└── .gitignore
+```
+
+---
+
+## Dataset
+
+The model expects a CSV with the following columns. A synthetic dataset with this schema is generated automatically when no file is present, so the project runs out of the box. To use real institutional data, place a CSV with the same columns at `data/raw/student_placement.csv`.
+
+| Column | Type | Description |
+|---|---|---|
+| `gender` | categorical | Male / Female / Other |
+| `branch` | categorical | Academic branch (CSE, IT, ECE, EE, ME, CE) |
+| `extracurricular` | categorical | Yes / No |
+| `cgpa` | numeric | Cumulative GPA on a 10-point scale |
+| `tenth_percentage` | numeric | Class X score (%) |
+| `twelfth_percentage` | numeric | Class XII score (%) |
+| `backlogs` | numeric | Number of active backlogs |
+| `internships` | numeric | Number of completed internships |
+| `projects` | numeric | Number of projects completed |
+| `certifications` | numeric | Number of professional certifications |
+| `hackathons` | numeric | Number of hackathons attended |
+| `coding_score` | numeric | Coding assessment score (0–100) |
+| `aptitude_score` | numeric | Aptitude test score (0–100) |
+| `communication_score` | numeric | Communication assessment score (0–100) |
+| `study_hours_per_day` | numeric | Average self-study hours per day (may be missing) |
+| `attendance_percentage` | numeric | Attendance (%) (may be missing) |
+| `placed` | target (0/1) | 1 if the student received a placement offer |
+
+Missing numeric values are imputed with the median, and missing categories with the most frequent value.
+
+> **Note on the synthetic data.** The generator encodes plausible relationships (for example, CGPA, coding skill, internships, and backlogs increase placement odds) but it is not real institutional data. Results on synthetic data demonstrate the pipeline; they should not be read as evidence about real students.
+
+---
+
+## Setup
+
+Requires Python 3.9 or newer.
+
+```bash
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -e ".[dev,app]"
+```
+
+---
+
+## Usage
+
+### 1. Train the model
+
+```bash
+python -m placement.train                 # full run with hyperparameter tuning
+python -m placement.train --no-tune       # faster run without grid search
+python -m placement.train --samples 10000 # size of synthetic data, if generated
+```
+
+This will:
+1. Create the dataset if it does not exist.
+2. Run stratified 5-fold cross-validation on each candidate model.
+3. Tune the best model with grid search.
+4. Evaluate on a held-out 20% test set.
+5. Write `models/placement_model.joblib`, `reports/metrics.json`, `reports/confusion_matrix.png`, `reports/roc_curve.png`, and `reports/permutation_importance.csv`.
+
+### 2. Run predictions from Python
+
+```python
+from placement.predict import PlacementPredictor
+
+predictor = PlacementPredictor()
+student = {
+    "gender": "Male", "branch": "CSE", "extracurricular": "Yes",
+    "cgpa": 8.1, "tenth_percentage": 88.0, "twelfth_percentage": 84.5,
+    "backlogs": 0, "internships": 1, "projects": 3, "certifications": 2,
+    "hackathons": 1, "coding_score": 74, "aptitude_score": 68,
+    "communication_score": 71, "study_hours_per_day": 4.0,
+    "attendance_percentage": 86,
+}
+print(predictor.predict_one(student))
+```
+
+### 3. Launch the dashboard
+
+```bash
+streamlit run app/streamlit_app.py
+```
+
+### 4. Run tests
+
+```bash
+pytest -q
+```
+
+---
+
+## Methodology
+
+**Preprocessing.** Numeric features are median-imputed and standardized. Categorical features are imputed with the mode and one-hot encoded with `handle_unknown="ignore"` so unseen categories at inference time do not crash the system.
+
+**Model selection.** Three candidates are compared on stratified 5-fold cross-validation using the training split only:
+
+- Logistic Regression: interpretable linear baseline.
+- Random Forest: captures non-linear interactions and is robust to noisy features.
+- Gradient Boosting: typically strongest on tabular data.
+
+The candidate with the highest mean ROC-AUC is selected. ROC-AUC is used as the primary metric because it is threshold-independent and robust to class imbalance.
+
+**Tuning.** The selected model is tuned with a small grid search on ROC-AUC. The grid is kept deliberately small to make the process quick and to limit overfitting to the validation folds.
+
+**Evaluation.** The final model is evaluated once on the untouched 20% test split. Reported metrics include ROC-AUC, average precision, accuracy, precision, recall, and F1, along with a confusion matrix.
+
+**Explainability.** Permutation importance measures the drop in ROC-AUC when each raw input feature is shuffled. Because it operates on raw features, the results are directly interpretable without needing to map one-hot columns back to their originals.
+
+---
+
+## Prediction Output
+
+```json
+{
+  "placement_probability": 0.7312,
+  "prediction": 1,
+  "risk_level": "Moderate placement likelihood",
+  "recommendations": [
+    "Build at least two more projects to strengthen your portfolio.",
+    "Improve aptitude scores with timed practice tests."
+  ]
+}
+```
+
+Probabilities are calibrated by the underlying model but have not been formally calibrated with isotonic or Platt scaling. For a production deployment, calibration should be checked on fresh data before the probabilities are used for decisions.
+
+---
+
+## Limitations and Responsible Use
+
+- **Decision support, not decision making.** Predictions should inform career-counselling and preparation efforts. They should never be the sole basis for admission, scholarship, or hiring decisions.
+- **Fairness.** Gender and other demographic attributes are included as inputs. Before any real deployment, the model should be audited for disparate impact across groups, and those attributes should be considered for removal if they do not serve a justified purpose.
+- **Data drift.** Placement markets change year to year. The model should be retrained on recent cohorts and monitored for performance decay.
+- **Causality.** The model identifies associations. Improving a feature (for example, adding internships) does not guarantee a change in outcome.
+- **Synthetic data.** The bundled generator is for demonstration. Real-world performance depends entirely on the quality and representativeness of the training data.
+
+---
+
+## Future Work
+
+- Calibrate probabilities with isotonic regression and report reliability curves.
+- Add SHAP explanations for per-student attributions.
+- Track experiments with MLflow and schedule retraining.
+- Containerize the Streamlit app with Docker and deploy behind an authenticated gateway.
+- Add a FastAPI endpoint for integration with institutional portals.
+
+---
+
+## License
+
+MIT

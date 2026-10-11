@@ -1,0 +1,16 @@
+README.md
+pyproject.toml
+src/placement/__init__.py
+src/placement/__main__.py
+src/placement/config.py
+src/placement/data_generator.py
+src/placement/evaluate.py
+src/placement/predict.py
+src/placement/preprocessing.py
+src/placement/train.py
+src/student_placement_prediction.egg-info/PKG-INFO
+src/student_placement_prediction.egg-info/SOURCES.txt
+src/student_placement_prediction.egg-info/dependency_links.txt
+src/student_placement_prediction.egg-info/requires.txt
+src/student_placement_prediction.egg-info/top_level.txt
+tests/test_pipeline.py
